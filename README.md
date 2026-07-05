@@ -1,59 +1,248 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+Multi-Tenant Laravel API
+Laravel PHP Sanctum MySQL License
+A Multi-Tenant REST API built with Laravel 12 and Laravel Sanctum, where each client (tenant) has its own isolated MySQL database.
+The application uses a central database to maintain tenant information, while all tenant-specific data (users, authentication tokens, etc.) is stored in dedicated tenant databases.
+________________________________________
+Table of Contents
+•	Features
+•	Architecture
+•	Requirements
+•	Installation
+•	API Endpoints
+•	Default Users
+•	Project Structure
+•	Artisan Commands
+•	Adding a New Tenant
+________________________________________
+Features
+•	Laravel 12
+•	Laravel Sanctum Authentication
+•	Multi-Tenant Architecture
+•	Separate Database Per Tenant
+•	Central Tenant Registry
+•	Automatic Tenant Detection
+•	Dynamic Database Switching
+•	Token Storage Inside Tenant Database
+•	Custom Artisan Command for Tenant Migrations
+•	Seeder Support for Multiple Tenants
+________________________________________
+Architecture
+                Central Database
+             (multi_tenant_db)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+          +----------------------+
+          |      clients table   |
+          +----------------------+
+                  │
+      Stores tenant database details
+                  │
+    ┌─────────────┼──────────────┐
+    │             │              │
+    ▼             ▼              ▼
 
-## About Laravel
++------------+ +------------+ +---------------+
+|   ibm_db   | |   hcl_db   | |  infosys_db   |
++------------+ +------------+ +---------------+
+| users      | | users      | | users         |
+| tokens     | | tokens     | | tokens        |
++------------+ +------------+ +---------------+
+Authentication Flow
+1.	User submits email and password
+2.	System scans all registered tenant databases
+3.	Matching user is located
+4.	Database connection switches dynamically
+5.	Credentials are validated
+6.	Sanctum token is created inside the tenant database
+7.	Every authenticated request automatically reconnects to the correct tenant database
+No client_code or tenant identifier is required during login.
+________________________________________
+Requirements
+•	PHP 8.2+
+•	Composer
+•	MySQL
+•	Laravel 12
+•	XAMPP / Laragon / Valet / Docker (optional)
+________________________________________
+Installation
+1. Clone the Repository
+git clone <repository-url>
+cd multi-tenant
+________________________________________
+2. Install Dependencies
+composer install
+________________________________________
+3. Create Environment File
+cp .env.example .env
+________________________________________
+4. Generate Application Key
+php artisan key:generate
+________________________________________
+5. Configure the Central Database
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=multi_tenant_db
+DB_USERNAME=root
+DB_PASSWORD=
+Configure the shared tenant database connection:
+TENANT_DB_HOST=127.0.0.1
+TENANT_DB_PORT=3306
+TENANT_DB_USERNAME=root
+TENANT_DB_PASSWORD=
+________________________________________
+6. Create Databases
+CREATE DATABASE multi_tenant_db;
+CREATE DATABASE ibm_db;
+CREATE DATABASE hcl_db;
+CREATE DATABASE infosys_db;
+________________________________________
+7. Run Central Migration
+php artisan migrate
+________________________________________
+8. Seed Tenant Registry
+php artisan db:seed --class=ClientSeeder
+This registers all tenants inside the central database.
+________________________________________
+9. Run Tenant Migrations
+php artisan tenants:migrate
+This creates tenant tables including:
+•	users
+•	personal_access_tokens
+•	password_reset_tokens
+•	cache
+•	jobs
+•	etc.
+________________________________________
+10. Seed Tenant Users
+Seed individual tenants:
+php artisan db:seed --class=IBMUserSeeder
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+php artisan db:seed --class=HCLUserSeeder
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+php artisan db:seed --class=InfosysUserSeeder
+Or seed everything:
+php artisan db:seed
+________________________________________
+11. Start the Development Server
+php artisan serve
+Application URL
+http://127.0.0.1:8000
+________________________________________
+API Endpoints
+Login
+POST
+/api/login
+Automatically identifies the tenant and authenticates the user.
+Request
+{
+    "email": "ibmuser@gmail.com",
+    "password": "12345678"
+}
+Success Response (200)
+{
+    "token": "1|xxxxxxxxxxxxxxxxxxxxxxxx",
+    "user": {
+        "id": 1,
+        "name": "IBM User",
+        "email": "ibmuser@gmail.com"
+    }
+}
+Failed Response (401)
+{
+    "message": "Invalid credentials"
+}
+________________________________________
+Logout
+POST
+/api/logout
+Header
+Authorization: Bearer {token}
+Success Response
+{
+    "message": "Logged out successfully"
+}
+Unauthorized
+{
+    "message": "No token provided"
+}
+________________________________________
+Default Users
+Tenant	Email	Password	Database
+IBM	ibmuser@gmail.com	12345678	ibm_db
+HCL	hcluser@gmail.com	12345678	hcl_db
+Infosys	infosysuser@gmail.com	12345678	infosys_db
+________________________________________
+Project Structure
+app
+├── Console
+│   └── Commands
+│       └── MigrateTenants.php
+│
+├── Http
+│   └── Controllers
+│       └── Api
+│           └── AuthController.php
+│
+├── Models
+│   ├── Client.php
+│   └── User.php
+│
+├── Providers
+│   └── AppServiceProvider.php
+│
+└── Services
+    └── TenantService.php
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+database
+├── migrations
+└── seeders
+    ├── ClientSeeder.php
+    ├── IBMUserSeeder.php
+    ├── HCLUserSeeder.php
+    └── InfosysUserSeeder.php
 
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
-
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-## Laravel Sponsors
-
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
-
-### Premium Partners
-
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+config
+└── database.php
+________________________________________
+Artisan Commands
+Command	Description
+php artisan migrate	Run central database migrations
+php artisan tenants:migrate	Run migrations on all tenant databases
+php artisan tenants:migrate --fresh	Fresh migrate all tenant databases
+php artisan db:seed	Seed all databases
+php artisan db:seed --class=ClientSeeder	Seed tenant registry
+php artisan db:seed --class=IBMUserSeeder	Seed IBM users
+php artisan db:seed --class=HCLUserSeeder	Seed HCL users
+php artisan db:seed --class=InfosysUserSeeder	Seed Infosys users
+________________________________________
+Adding a New Tenant
+Step 1
+Create a new database.
+CREATE DATABASE newclient_db;
+________________________________________
+Step 2
+Register the tenant.
+Client::create([
+    'client_code' => 'NEWCLIENT',
+    'db_server'   => '127.0.0.1',
+    'db_port'     => '3306',
+    'db_name'     => 'newclient_db',
+    'db_user'     => 'root',
+    'db_password' => '',
+]);
+________________________________________
+Step 3
+Run tenant migrations.
+php artisan tenants:migrate
+________________________________________
+Step 4
+Create a user seeder for the tenant and execute it.
+________________________________________
+Security
+•	Tenant databases are fully isolated.
+•	Authentication tokens are stored inside the tenant’s own database.
+•	Database connections are switched dynamically based on the authenticated tenant.
+•	No tenant identifier is exposed in the authentication API.
+________________________________________
+License
+This project is open-source and available under the MIT License.

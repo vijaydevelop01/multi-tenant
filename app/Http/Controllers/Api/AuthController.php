@@ -35,7 +35,11 @@ class AuthController extends Controller
         }
 
         if (!$matchedUser || !Hash::check($request->password, $matchedUser->password)) {
-            return response()->json(['message' => 'Invalid credentials'], 401);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid credentials',
+                'data'    => null,
+            ], 401);
         }
 
         TenantService::connect($matchedClient);
@@ -43,8 +47,51 @@ class AuthController extends Controller
         $token = $matchedUser->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'token' => $token,
-            'user'  => $matchedUser,
+            'success' => true,
+            'message' => 'Login successful',
+            'data' => [
+                'token' => $token,
+                'user'  => $matchedUser,
+            ],
         ], 200);
+    }
+
+    public function logout(Request $request)
+    {
+        $bearerToken = $request->bearerToken();
+
+        if (!$bearerToken) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No token provided',
+            ], 401);
+        }
+
+        [$tokenId, $plainToken] = array_pad(explode('|', $bearerToken, 2), 2, null);
+
+        $tokenHash = hash('sha256', $plainToken);
+
+        foreach (Client::all() as $client) {
+            TenantService::connect($client);
+
+            $accessToken = PersonalAccessToken::on('tenant')
+                ->where('id', $tokenId)
+                ->where('token', $tokenHash)
+                ->first();
+
+            if ($accessToken) {
+                $accessToken->delete();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Logged out successfully',
+                ]);
+            }
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Invalid or expired token',
+        ], 401);
     }
 }
